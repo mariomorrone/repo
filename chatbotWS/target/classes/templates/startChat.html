@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>ChatWin POC</title>
+    <link th:href="@{/startChat.css}" rel="stylesheet" type="text/css"/>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+
+</head>
+
+<body>
+<div class="chat">
+    <div id="messageBox" class="messages">
+        <ul class="message-list">
+
+            <li class="message-item item-primary" th:text="${message}">
+
+            </li>
+        </ul>
+        <div class="message-input">
+            <input type="text" placeholder="Scrivi messaggio..." />
+            <button type="button" class="btn" id="btn">Invia</button>
+            <button type="button" class="btn rewind" id="rewind">Ricomincia</button>
+        </div>
+    </div>
+</div>
+</body>
+
+
+<script>
+
+    var messages;
+    var btn;
+    var input;
+    var rewind;
+    var appuntamentoFound = false
+    var generalitaSearch = false
+
+
+    window.onload = function() {
+
+        // Variables
+        messages = document.querySelector('.message-list')
+        btn = document.querySelector('.btn')
+        rewind = document.querySelector('.rewind')
+        input = document.querySelector('input')
+
+// Button/Enter Key
+        btn.addEventListener('click', filterMessage)
+        rewind.addEventListener('click', cleanHistory)
+        input.addEventListener('keyup', function(e){ if(e.keyCode == 13) filterMessage() })
+
+    };
+
+    function cleanHistory() {
+        var user = '[[${user}]]'
+        $.ajax({
+            type: 'POST',
+            url: "/message/cleanHistory",
+            dataType: "text",
+            data: {user: user},
+        }).done(function(returnedData){
+            cleanChat()
+        }).fail(function(){
+            alert("server unreachable");
+        })
+    }
+
+    function cleanChat(){
+        var message = document.createElement('li')
+        message.classList.add('message-item', 'item-primary')
+        message.innerHTML = "Benvenuto, come posso aiutarti?"
+        while (messages.firstChild){
+            messages.removeChild(messages.lastChild)
+        }
+        messages.appendChild(message)
+        messages.scrollTop = messages.scrollHeight;
+        appuntamentoFound=false;
+        generalitaSearch=false;
+    }
+
+    function filterMessage(){
+        var msg = input.value;
+        input.value = ''
+        writeLine(msg)
+        var user = '[[${user}]]'
+        writeLinePrimary("Sta scrivendo...", false)
+        if (!generalitaSearch){
+            sendMessage(user, msg)
+        }
+        else{
+            chiediGeneralita(user, msg)
+        }
+    }
+
+    function chiediGeneralita(user, msg){
+        $.ajax({
+            type: 'POST',
+            url: "/message/getGeneralita",
+            dataType: "text",
+            data: {user: user, message: msg},
+        }).done(function(returnedData){
+            console.log(returnedData)
+            if (returnedData.indexOf("${ERROR_RICONOSCIMENTO}")!==-1){
+                writeLinePrimary(returnedData.split('${ERROR_RICONOSCIMENTO}')[1], true);
+            }
+            else{
+                writeLinePrimary(returnedData, true);
+            }
+        }).fail(function(){
+            alert("server unreachable");
+        })
+    }
+
+    // Messenger Functions
+    function sendMessage(user, msg) {
+            $.ajax({
+                type: 'POST',
+                url: "/message/sendMessage",
+                dataType: "text",
+                data: {user: user, message: msg, appuntamentoFound: appuntamentoFound},
+            }).done(function(returnedData){
+                console.log(returnedData);
+                if (returnedData.indexOf("${NEGAZIONE}")!==-1){
+                    writeLinePrimary(returnedData.split('${NEGAZIONE}')[1], true);
+                    appuntamentoFound=false;
+                    return;
+                }
+                if (returnedData.indexOf("${CONFERMA}")!==-1){
+                    generalitaSearch=true
+                    chiediGeneralita(user, returnedData)
+                    return;
+                }
+                if (returnedData.indexOf("${ERROR_RICONOSCIMENTO}")!==-1){
+                    writeLinePrimary(returnedData.split('${ERROR_RICONOSCIMENTO}')[1], true);
+                    return;
+                }
+                if (returnedData.indexOf('${APPUNTAMENTO_SEARCH}')!==-1){
+                    writeLinePrimary(returnedData.split('${APPUNTAMENTO_SEARCH}')[1], true);
+                    findAppuntamento(returnedData.split('${APPUNTAMENTO_SEARCH}')[1]);
+                    return;
+                }
+                else{
+                    writeLinePrimary(returnedData, true);
+                    return;
+                }
+
+            }).fail(function(){
+                alert("server unreachable");
+            })
+    }
+
+    function addMessage(e){
+        var msg = e.data ? JSON.parse(e.data) : e;
+        writeLine(`${msg.FROM}: ${msg.MESSAGE}`)
+    }
+
+    function findAppuntamento (textServizio) {
+        // writeLinePrimary("Sta scrivendo...", false)
+        var user = '[[${user}]]'
+        $.ajax({
+            type: 'POST',
+            url: "/message/findAppuntamento",
+            dataType: "text",
+            data: {user: user, prestazioneText: textServizio},
+        }).done(function(returnedData){
+            console.log(returnedData)
+            if (returnedData.indexOf('${ERRORE_RICONOSCIMENTO_PRESTAZIONE}')===-1){
+                writeLinePrimary(returnedData, false);
+                appuntamentoFound=true;
+            }
+        }).fail(function(){
+            alert("server unreachable");
+        })
+
+    }
+
+
+    function writeLine(text){
+        var message = document.createElement('li')
+        message.classList.add('message-item', 'item-secondary')
+        message.innerHTML = text
+        messages.appendChild(message)
+        messages.scrollTop = messages.scrollHeight;
+    }
+
+    function writeLinePrimary(text, substitute){
+        var message = document.createElement('li')
+        message.classList.add('message-item', 'item-primary')
+        message.innerHTML = text
+        if (substitute)
+        {
+            messages.removeChild(messages.lastChild)
+        }
+        messages.appendChild(message)
+        messages.scrollTop = messages.scrollHeight;
+    }
+
+</script>
